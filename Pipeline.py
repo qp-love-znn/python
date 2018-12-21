@@ -96,3 +96,40 @@ class Pipeline:
 		else:
 			print "error : %s is not exist, please check!" % filename
 			sys.exit()
+
+import gzip
+from itertools import izip			
+
+class Deal_reads():
+	def __init__(self):
+		pass
+
+	def get_out_reads(self,reads1,reads2,pca,out):
+		ty = pca.strip().split(",")
+		with gzip.open(reads1,'r') as r1,gzip.open(reads2,'r') as r2,open(out+"_1.fq",'w') as f1,open(out+"_2.fq",'w') as f2:
+			arr1 = []
+			arr2 = []
+			for line1,line2 in izip(r1,r2):
+				line1 = line1.strip()
+				line2 = line2.strip()
+				if line1.startswith("@") and line2.startswith("@"):
+					if len(arr1) == 4:
+						pp1 = arr1[1][0:8]
+						pp2 = arr2[1][0:8]
+						re = pp1+"-"+pp2
+						pc1 = arr1[1][8:]
+						pc2 = arr2[1][8:]
+						qua1 = arr1[-1][8:]
+						qua2 = arr2[-1][8:]
+						if re in ty:
+							f1.write(arr1[0]+"\n"+pc1+"\n+\n"+qua1+"\n")
+							f2.write(arr2[0]+"\n"+pc2+"\n+\n"+qua2+"\n")
+					arr1 = []
+					arr2 = []
+					arr1.append(line1)
+					arr2.append(line2)
+				else :
+					arr1.append(line1)
+					arr2.append(line2)
+		os.system("gzip -f %s_1.fq" % out)
+		os.system("gzip -f %s_2.fq" % out)

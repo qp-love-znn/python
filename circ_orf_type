@@ -1,0 +1,119 @@
+#!/usr/bin/python 
+#-*-coding:utf-8-*-
+
+import re,sys
+import os
+#from collections import Counter
+
+def main(infile,outprefix):
+	with open(infile) as f1,open(outprefix+".type.xls",'w') as f2:
+		f2.write("type\tcount\n")
+		type_lis = []
+		for line in f1:
+			line = line.strip()
+			each = line.split("\t")
+			if line.startswith("chrome"):
+				type_index = each.index("ORF_attrs")
+				continue
+			type_lis += each[type_index].split(";")
+		for ctype in ["COMPLETE","HEAD_TO_TAIL","MOEBIUS_ORF","KNOWN_START","MICROPEPTIDE"]:
+			f2.write(ctype+"\t"+str(type_lis.count(ctype))+"\n")
+	
+	cmd = '''library(ggplot2)
+data <- read.table("%s.type.xls",head=T,sep="\\t")
+ggplot(data,aes(type,count,fill=type))+
+geom_bar(stat = "identity")+ labs(x="", y="count", color="") + 
+theme_bw() + theme(axis.text.x = element_text(angle=45,hjust=1))
+ggsave("%s.type.png",dpi = 300)
+ggsave("%s.type.pdf")'''% (outprefix,outprefix,outprefix)
+	
+	with open(outprefix+".type.r",'w') as tmp:
+		tmp.write(cmd)
+	
+	os.system("/Bio/bin/Rscript %s.type.r" % outprefix)
+
+if __name__ == "__main__" :
+	if len(sys.argv) != 3:
+		print "Usage : python count_circ_orf_type.py <infile> <outprefix>\n"
+		sys.exit()
+
+	main(*sys.argv[1:])
+  
+ 
+ 
+ ###get_junction_reads_annot
+  #!/usr/bin/python
+#-*-coding:utf-8-*-
+
+import sys,os
+import re
+
+def main(indir,annot):
+	annot_dic = {}
+	with open(annot) as tmp:
+		for line in tmp:
+			line = line.strip()
+			each = line.split("\t")
+			annot_dic[each[0]] = "\t".join(each[1:])
+
+	sample  = []
+	all_cir = []
+	all_count = {}
+	bamlist = os.popen("ls %s/*junction.bam" % indir)
+	for bam in bamlist:
+		name = os.path.basename(bam).split(".")[0]
+		sample.append(name)
+		cir = []
+		count = {}
+		for line in os.popen("/Bio/bin/samtools view %s"% bam):
+			line = line.strip().split("\t")
+			NM = re.search(r'NM:i:(\d+)',"".join(line[11:])).group(1)
+			#print re.search(r'NM:i:(\d+)',"".join(line[11:])).group(0)
+			if "M" in line[5] and int(NM) <= 2 :
+				align_lis = [int(x) for x in re.findall(r'(\d+)M',line[5])]
+				align_len = sum(align_lis)
+				start = int(line[3])
+				end = start+align_len
+				if start <= 46 and end >= 55 :
+					if line[2] not in all_cir :
+						all_cir.append(line[2])
+					if line[2] not in cir:
+						cir.append(line[2])
+						count[line[2]] = 1
+					else :
+						count[line[2]] += 1
+		all_count[name] = count
+
+		with open("%s/%s.junction_reads.count.annot.xls" % (indir,name),'w') as out,open("%s/%s.glist" % (indir,name),'w') as g:
+			out.write("CircRNA_id\tjunction_reads\tsource_gene\t"+annot_dic["GeneID"]+"\n")
+			gen_lis = []
+			for ids in cir:
+				CircRNA_id = ids.split(":")[0]
+				source_gene = ids.split(":")[1]
+				if source_gene not in gen_lis :
+					gen_lis.append(source_gene)
+					g.write(source_gene+"\n")
+				junction_reads = count[ids]
+				out.write(CircRNA_id+"\t"+str(junction_reads)+"\t"+source_gene+"\t"+annot_dic[source_gene]+"\n")
+
+	with open("%s/all.junction_reads.count.annot.xls" % indir,'w') as f :
+		header = "\t".join([x+"_count" for x in sample])
+		f.write("CircRNA_id\t"+header+"\tsource_gene\t"+annot_dic["GeneID"]+"\n")
+		for m in all_cir :
+			CircRNA_id = m.split(":")[0]
+			source_gene = m.split(":")[1]
+			junction_reads = []
+			for samp in sample :
+				count_dic = all_count[samp]
+				if m in count_dic:
+					junction_reads.append(str(count_dic[m]))
+				else :
+					junction_reads.append("0")
+			f.write(CircRNA_id+"\t"+"\t".join(junction_reads)+"\t"+source_gene+"\t"+annot_dic[source_gene]+"\n")
+
+if __name__ == "__main__" :
+	if len(sys.argv) != 3:
+		print "Usage :python get_junction_reads_annot.py <junction_bam_dir> <Annot.txt> \n"
+		sys.exit()
+
+	main(*sys.argv[1:])
